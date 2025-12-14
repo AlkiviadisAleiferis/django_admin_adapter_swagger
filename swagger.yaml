@@ -1,7 +1,7 @@
 openapi: 3.0.4
 
 info:
-  title: Django Admin API Adapter - OpenAPI 3.0
+  title: Django Admin Adapter - OpenAPI 3.0
   description: |-
     This is the OpenAPI specification for the Django Admin API Adapter package
   contact:
@@ -28,8 +28,8 @@ tags:
   - name: Object Create
     description: Admin object create endpoints. Used for creating an object.
 
-  - name: Object Retrieve
-    description: Admin object retrieve endpoint. Used for retrieving an object.
+  - name: Object View
+    description: Admin object view endpoint. Used for viewing an object.
 
   - name: Object Update
     description: Admin object update endpoints. Used for updating the object.
@@ -359,10 +359,10 @@ paths:
       security:
         - simple_jwt_token: []
 
-  /{app_name}/{model_name}/{pk}/:
+  /{app_name}/{model_name}/{pk}/view/:
     get:
       tags:
-        - Object Retrieve
+        - Object View
       summary: Preview an object of the app's model.
       description: Preview an object of the app's model.
       operationId: admin_object_preview
@@ -394,7 +394,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminObjectPreviewResponse'
+                $ref: '#/components/schemas/AdminObjectViewResponse'
         '401':
           description: Token is not correct or expired.
         '403':
@@ -405,7 +405,7 @@ paths:
           description: Unexpected error
       security:
         - simple_jwt_token: []
-
+  /{app_name}/{model_name}/{pk}/:
     put:
       tags:
         - Object Update
@@ -1047,51 +1047,139 @@ components:
 
     BaseInfoResponse:
       type: object
+      required:
+        - sidebar
+        - profile
+        - extra
       properties:
-        apps:
-          example: ["app_name_1", "app_name_2"]
+        sidebar:
           type: array
+          description: Sidebar navigation entries
           items:
-            type: string
-        entities:
-          type: object
-          properties:
-            app_name:
-              type: array
-              items:
-                type: object
-                properties:
-                  model_name:
-                    type: string
-                    example: "The systemic name of the model (`Model._meta.model_name`)"
-                  name:
-                    type: string
-                    example: "The verbose name of the model"
-                  icon:
-                    type: string
-                    example: "The awesome icon class (found on the ModelAdmin sidebar_icon attribute)"
-                  permissions:
-                    type: object
-                    properties:
-                      view:
-                        type: boolean
-                      add:
-                        type: boolean
-                      delete:
-                        type: boolean
+            oneOf:
+              - $ref: '#/components/schemas/ModelSidebarEntry'
+              - $ref: '#/components/schemas/ViewSidebarEntry'
+              - $ref: '#/components/schemas/DropdownSidebarEntry'
         profile:
+          $ref: '#/components/schemas/UserProfile'
+        extra_data:
+          $ref: '#/components/schemas/ExtraData'
+    ModelSidebarEntry:
+      type: object
+      required:
+        - type
+        - label
+        - app_name
+        - model_name
+        - permissions
+      properties:
+        type:
+          type: string
+          enum: [model]
+        label:
+          type: string
+          description: Display label for the model
+        icon:
+          type: string
+          nullable: true
+          description: Icon identifier for the model
+        app_name:
+          type: string
+          description: Django app name
+        model_name:
+          type: string
+          description: Django model name
+        permissions:
           type: object
+          required:
+            - view
+            - add
+            - delete
           properties:
-            user_pk:
-              type: string
-            app_name:
-              type: string
-              example: "The name of the User model's app"
-            model_name:
-              type: string
-              example: "The systemic name of the User model"
-            password_change:
+            view:
               type: boolean
+              description: Always true if entry is visible
+            add:
+              type: boolean
+              description: Whether user can add new instances
+            delete:
+              type: boolean
+              description: Whether user can delete instances
+
+    ViewSidebarEntry:
+      type: object
+      required:
+        - type
+        - label
+        - client_view_path
+        - view_name
+      properties:
+        type:
+          type: string
+          enum: [view]
+        label:
+          type: string
+          description: Display label for the view
+        client_view_path:
+          type: string
+          description: Client-side route path
+        icon:
+          type: string
+          nullable: true
+          description: Icon identifier for the view
+        view_name:
+          type: string
+          description: View identifier name
+
+    DropdownSidebarEntry:
+      type: object
+      required:
+        - type
+        - label
+        - dropdown_entries
+      properties:
+        type:
+          type: string
+          enum: [dropdown]
+        label:
+          type: string
+          description: Display label for the dropdown
+        icon:
+          type: string
+          nullable: true
+          description: Icon identifier for the dropdown
+        dropdown_entries:
+          type: array
+          description: Nested entries within the dropdown
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/ModelSidebarEntry'
+              - $ref: '#/components/schemas/ViewSidebarEntry'
+
+    UserProfile:
+      type: object
+      required:
+        - user_pk
+        - app_name
+        - model_name
+        - password_change
+      properties:
+        user_pk:
+          type: integer
+          nullable: true
+          description: Primary key of the current user (null if no view permission)
+        app_name:
+          type: string
+          nullable: true
+          description: App label of the user model (null if no view permission)
+        model_name:
+          type: string
+          nullable: true
+          description: Model name of the user model (null if no view permission)
+        password_change:
+          type: boolean
+          description: Whether user has permission to change their password
+
 
     AdminListInfoResponse:
       type: object
@@ -1171,17 +1259,15 @@ components:
             maxItems: 2
             items:
               type: string
-
-        list_extra_data:
-          example: "anything"
-          anyOf:
-            - type: string
-            - type: number
-            - type: integer
-            - type: boolean
-            - type: array
-              items: {}
-            - type: object
+        extra_data:
+          $ref: '#/components/schemas/ExtraData'
+        list_max_show_all:
+          type: boolean
+        sortable_by:
+          type: array
+          items:
+            type: string
+            example: ["field1", "field2", ".."]
 
     AdminListResponse:
       type: object
@@ -1637,8 +1723,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/InlineAdd'
+        extra_data:
+          $ref: '#/components/schemas/ExtraData'
 
-    AdminObjectPreviewResponse:
+    AdminObjectViewResponse:
       type: object
       properties:
         object_repr:
@@ -1657,6 +1745,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PreviewInline'
+        extra_data:
+          $ref: '#/components/schemas/ExtraData'
 
     AdminObjectEditResponse:
       type: object
@@ -1680,6 +1770,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/InlineEdit'
+        extra_data:
+          $ref: '#/components/schemas/ExtraData'
 
     AdminObjectConfirmDeleteResponse:
       type: object
@@ -1700,6 +1792,8 @@ components:
           items:
             anyOf:
               - type: array
+                items:
+                  type: string
               - type: string
         model_count:
           type: object
@@ -1717,6 +1811,8 @@ components:
           items:
             type: string
             example: "Object repr or HTML <a>"
+        extra_data:
+          $ref: '#/components/schemas/ExtraData'
 
     AdminObjectHistoryResponse:
       type: object
@@ -1848,16 +1944,19 @@ components:
                   items:
                     $ref: '#/components/schemas/FormErrors'
                 non_forms_errors:
-                  type: string
-                  format: html
-                  example: "<ul class=\"errorlist nonform\"><li>HTML safe escaped error message</li></ul>"
+                  example: ["rror message", ".."]
+                  type: array
+                  items:
+                    type: string
 
     AdminObjectCreateSuccessResponse:
       type: object
       properties:
-        message:
-          type: string
-          example: "New object '{new_object}' CREATED successfully"
+        messages:
+          example: ["New object {object} was created successfully"]
+          type: array
+          items:
+            type: string
         object:
           type: object
           properties:
@@ -1873,16 +1972,20 @@ components:
     AdminObjectUpdateSuccessResponse:
       type: object
       properties:
-        message:
-          type: string
-          example: "Object '{object}' was UPDATED successfully"
+        messages:
+          example: ["{object} updated successfully"]
+          type: array
+          items:
+            type: string
 
     AdminObjectDeleteSuccessResponse:
       type: object
       properties:
-        message:
-          type: string
-          example: "The object '{object}' was DELETED successfully"
+        messages:
+          example: ["The object {object} was deleted successfully"]
+          type: array
+          items:
+            type: string
 
     AutocompleteResponse:
       nullable: true
@@ -1919,6 +2022,21 @@ components:
           items:
             type: string
             example: "Message body"
+
+    ExtraData:
+      example: "anything.. list/object etc"
+      anyOf:
+        - type: string
+        - type: boolean
+        - type: number
+        - type: object
+        - type: array
+          items:
+            anyOf:
+              - type: string
+              - type: boolean
+              - type: number
+              - type: object
 
   securitySchemes:
     simple_jwt_token:
